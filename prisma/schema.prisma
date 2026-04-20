@@ -1,0 +1,507 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum TrackStatus {
+  ACTIVE
+  COMING_SOON
+  ARCHIVED
+}
+
+enum PlanScope {
+  TRACK
+  ALL_ACCESS
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum PaymentStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum FeedbackStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  REVIEWED
+  NEEDS_REVISION
+  CLOSED
+}
+
+enum ContentType {
+  VIDEO
+  ARTICLE
+  GUIDE
+  NOTE
+  REFERENCE
+  DOWNLOAD
+  CHECKLIST
+}
+
+enum ResourceDifficulty {
+  BEGINNER
+  FOUNDATIONAL
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum NotificationType {
+  PAYMENT
+  MEMBERSHIP
+  ROADMAP
+  QUIZ
+  FEEDBACK
+  ANNOUNCEMENT
+}
+
+model User {
+  id               String              @id @default(cuid())
+  email            String              @unique
+  name             String?
+  image            String?
+  locale           String              @default("ar-EG")
+  isSuspended      Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  memberships      Membership[]
+  paymentRequests  PaymentRequest[]
+  feedbackThreads  FeedbackThread[]
+  taskCompletions  TaskCompletion[]
+  quizAttempts     QuizAttempt[]
+  notifications    Notification[]
+  userRoles        UserRole[]
+}
+
+model Role {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  label           String
+  description     String?
+  isSystem        Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id              String           @id @default(cuid())
+  key             String           @unique
+  label           String
+  group           String
+  description     String?
+  rolePermissions RolePermission[]
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  assignedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model Track {
+  id                String          @id @default(cuid())
+  slug              String          @unique
+  name              String
+  nameAr            String
+  summary           String
+  summaryAr         String
+  status            TrackStatus     @default(COMING_SOON)
+  isFeatured        Boolean         @default(false)
+  roadmapLengthDays Int             @default(60)
+  accentColor       String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  community         TrackCommunity?
+  roadmapWeeks      RoadmapWeek[]
+  plans             Plan[]
+  contentItems      ContentItem[]
+  toolkitItems      ToolkitItem[]
+  quizzes           Quiz[]
+  feedbackThreads   FeedbackThread[]
+}
+
+model TrackCommunity {
+  id          String   @id @default(cuid())
+  trackId      String   @unique
+  label        String
+  description  String?
+  inviteUrl    String?
+  isEnabled    Boolean  @default(true)
+  track        Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+}
+
+model Plan {
+  id              String       @id @default(cuid())
+  code            String       @unique
+  name            String
+  nameAr          String
+  scope           PlanScope
+  trackId         String?
+  priceCents      Int
+  currency        String       @default("EGP")
+  billingPeriod   String       @default("annual")
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  track           Track?       @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  memberships     Membership[]
+  paymentRequests PaymentRequest[]
+}
+
+model Membership {
+  id           String            @id @default(cuid())
+  userId        String
+  planId        String
+  status        MembershipStatus @default(PENDING)
+  startsAt      DateTime?
+  expiresAt     DateTime?
+  grantedById   String?
+  source        String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan          Plan             @relation(fields: [planId], references: [id], onDelete: Restrict)
+}
+
+model Coupon {
+  id              String     @id @default(cuid())
+  code            String     @unique
+  label           String?
+  discountType    String
+  discountValue   Int
+  planScope       PlanScope?
+  trackId         String?
+  maxUses         Int?
+  perUserLimit    Int?
+  usedCount       Int        @default(0)
+  isActive        Boolean    @default(true)
+  expiresAt       DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  redemptions     CouponRedemption[]
+}
+
+model CouponRedemption {
+  id                String         @id @default(cuid())
+  couponId          String
+  userId            String
+  paymentRequestId  String?
+  createdAt         DateTime       @default(now())
+  coupon            Coupon         @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PaymentRequest {
+  id                 String         @id @default(cuid())
+  userId             String
+  planId             String
+  couponCodeSnapshot String?
+  pricingSnapshot    Json
+  receiptUrl         String
+  phoneNumber        String
+  note               String?
+  adminNote          String?
+  status             PaymentStatus  @default(SUBMITTED)
+  submittedAt        DateTime       @default(now())
+  reviewedAt         DateTime?
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan               Plan           @relation(fields: [planId], references: [id], onDelete: Restrict)
+  reviewLogs         PaymentReviewLog[]
+}
+
+model PaymentReviewLog {
+  id                String         @id @default(cuid())
+  paymentRequestId   String
+  action            String
+  note              String?
+  createdAt         DateTime       @default(now())
+  paymentRequest    PaymentRequest @relation(fields: [paymentRequestId], references: [id], onDelete: Cascade)
+}
+
+model RoadmapWeek {
+  id              String       @id @default(cuid())
+  trackId         String
+  order           Int
+  title           String
+  titleAr         String
+  objective       String
+  objectiveAr     String
+  explanation     String?
+  explanationAr   String?
+  expectedOutcome String?
+  expectedOutcomeAr String?
+  isPublished     Boolean      @default(false)
+  track           Track        @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  days            RoadmapDay[]
+  quizzes         Quiz[]
+
+  @@unique([trackId, order])
+}
+
+model RoadmapDay {
+  id               String       @id @default(cuid())
+  weekId           String
+  order            Int
+  title            String
+  titleAr          String
+  description      String?
+  descriptionAr    String?
+  estimatedMinutes Int?
+  isLockedByDefault Boolean     @default(false)
+  week             RoadmapWeek  @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  tasks            RoadmapTask[]
+
+  @@unique([weekId, order])
+}
+
+model RoadmapTask {
+  id               String       @id @default(cuid())
+  dayId            String
+  order            Int
+  title            String
+  titleAr          String
+  whyItMatters     String?
+  whyItMattersAr   String?
+  instructions     String
+  instructionsAr   String
+  expectedOutput   String?
+  expectedOutputAr String?
+  estimatedMinutes Int?
+  helpNotes        String?
+  helpNotesAr      String?
+  commonIssues     Json?
+  checklist        Json?
+  day              RoadmapDay   @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  resources        RoadmapResourceLink[]
+  completions      TaskCompletion[]
+
+  @@unique([dayId, order])
+}
+
+model RoadmapResourceLink {
+  id            String      @id @default(cuid())
+  taskId        String
+  contentItemId String?
+  toolkitItemId String?
+  label         String?
+  task          RoadmapTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  contentItem   ContentItem? @relation(fields: [contentItemId], references: [id], onDelete: SetNull)
+  toolkitItem   ToolkitItem? @relation(fields: [toolkitItemId], references: [id], onDelete: SetNull)
+}
+
+model TaskCompletion {
+  id          String       @id @default(cuid())
+  userId      String
+  taskId      String
+  completedAt DateTime     @default(now())
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task        RoadmapTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId])
+}
+
+model ContentItem {
+  id                String             @id @default(cuid())
+  trackId           String?
+  title             String
+  titleAr           String
+  type              ContentType
+  provider          String?
+  summary           String?
+  summaryAr         String?
+  url               String?
+  difficulty        ResourceDifficulty @default(BEGINNER)
+  estimatedMinutes  Int?
+  isRequired        Boolean            @default(false)
+  isPublished       Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  track             Track?             @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  roadmapLinks      RoadmapResourceLink[]
+}
+
+model ToolkitItem {
+  id               String       @id @default(cuid())
+  trackId          String?
+  title            String
+  titleAr          String
+  category         String
+  summary          String?
+  summaryAr        String?
+  fileUrl          String?
+  previewImageUrl  String?
+  isFeatured       Boolean      @default(false)
+  isPublished      Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  track            Track?       @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  roadmapLinks     RoadmapResourceLink[]
+}
+
+model CareerResource {
+  id             String    @id @default(cuid())
+  title          String
+  titleAr        String
+  category       String
+  summary        String?
+  summaryAr      String?
+  fileUrl        String?
+  isPublished    Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Quiz {
+  id             String       @id @default(cuid())
+  trackId        String
+  weekId         String?
+  title          String
+  titleAr        String
+  scope          String
+  passingScore   Int?
+  isPublished    Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  track          Track        @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  week           RoadmapWeek? @relation(fields: [weekId], references: [id], onDelete: SetNull)
+  questions      QuizQuestion[]
+  attempts       QuizAttempt[]
+}
+
+model QuizQuestion {
+  id             String       @id @default(cuid())
+  quizId         String
+  order          Int
+  prompt         String
+  promptAr       String
+  type           String
+  explanation    String?
+  explanationAr  String?
+  quiz           Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  choices        QuizChoice[]
+}
+
+model QuizChoice {
+  id             String       @id @default(cuid())
+  questionId     String
+  label          String
+  labelAr        String
+  isCorrect      Boolean      @default(false)
+  question       QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+model QuizAttempt {
+  id             String      @id @default(cuid())
+  quizId         String
+  userId         String
+  score          Int?
+  status         String
+  answers        Json?
+  submittedAt    DateTime    @default(now())
+  quiz           Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model FeedbackThread {
+  id             String         @id @default(cuid())
+  userId         String
+  trackId        String?
+  type           String
+  title          String
+  note           String?
+  submissionUrl  String?
+  status         FeedbackStatus @default(SUBMITTED)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track          Track?         @relation(fields: [trackId], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id          String            @id @default(cuid())
+  userId      String
+  type        NotificationType
+  title       String
+  titleAr     String
+  body        String?
+  bodyAr      String?
+  href        String?
+  isRead      Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Announcement {
+  id           String    @id @default(cuid())
+  title        String
+  titleAr      String
+  body         String
+  bodyAr       String
+  trackId      String?
+  isPublished  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model LandingPage {
+  id           String           @id @default(cuid())
+  slug         String           @unique
+  title        String
+  titleAr      String
+  status       String           @default("draft")
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  sections     LandingSection[]
+}
+
+model LandingSection {
+  id            String      @id @default(cuid())
+  pageId        String
+  type          String
+  order         Int
+  data          Json
+  isVisible     Boolean     @default(true)
+  page          LandingPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, order])
+}
+
+model AuditLog {
+  id           String    @id @default(cuid())
+  actorUserId  String?
+  entityType   String
+  entityId     String?
+  action       String
+  summary      String?
+  payload      Json?
+  createdAt    DateTime  @default(now())
+}
+
