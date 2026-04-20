@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
 
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { requireAdmin } from "@/lib/auth";
 import { adminNav } from "@/lib/navigation";
 
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: ReactNode;
 }) {
+  await requireAdmin();
+
   return (
     <WorkspaceShell
       badge="Admin control center"

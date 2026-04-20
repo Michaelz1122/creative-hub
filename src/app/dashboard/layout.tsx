@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
 
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { requireUser } from "@/lib/auth";
 import { dashboardNav } from "@/lib/navigation";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: ReactNode;
 }) {
+  await requireUser();
+
   return (
     <WorkspaceShell
       badge="Learner workspace"
