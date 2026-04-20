@@ -14,7 +14,12 @@ type SessionPayload = {
 };
 
 function getSecret() {
-  const secret = process.env.JWT_SECRET || "creative-hub-dev-secret";
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error("JWT_SECRET is required to create or verify sessions.");
+  }
+
   return new TextEncoder().encode(secret);
 }
 
@@ -91,7 +96,7 @@ export async function requireAdmin() {
   const user = await requireUser();
   const roleNames = user.userRoles.map((entry) => entry.role.name);
 
-  if (!roleNames.includes("super_admin") && !roleNames.includes("payment_reviewer")) {
+  if (roleNames.length === 0) {
     redirect("/dashboard");
   }
 

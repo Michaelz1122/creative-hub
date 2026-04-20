@@ -65,6 +65,18 @@ export default async function DashboardTrackWorkspacePage({
 
   const entitlements = getEntitlementSummary(memberships);
   const accessible = hasTrackAccess(entitlements, track.id);
+  const firstIncompleteTask =
+    track.roadmapWeeks
+      .flatMap((week) =>
+        week.days.flatMap((day) =>
+          day.tasks.map((task) => ({
+            ...task,
+            day,
+            week,
+          })),
+        ),
+      )
+      .find((task) => task.completions.length === 0) || null;
 
   if (!accessible) {
     return (
@@ -98,7 +110,7 @@ export default async function DashboardTrackWorkspacePage({
           <h1 className="mt-3 text-4xl font-semibold text-white">{track.nameAr}</h1>
           <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300">{track.summaryAr}</p>
         </div>
-        {track.community?.inviteUrl ? (
+        {track.community?.inviteUrl && track.community.isEnabled ? (
           <a
             href={track.community.inviteUrl}
             target="_blank"
@@ -109,6 +121,37 @@ export default async function DashboardTrackWorkspacePage({
           </a>
         ) : null}
       </div>
+
+      {firstIncompleteTask ? (
+        <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+          <article className="surface rounded-[30px] p-6">
+            <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-accent-soft)]">
+              What should I do now?
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold text-white">{firstIncompleteTask.titleAr}</h2>
+            <p className="mt-3 text-sm leading-7 text-slate-300">{firstIncompleteTask.instructionsAr}</p>
+            <p className="mt-3 text-sm text-slate-400">
+              الناتج المطلوب الآن: {firstIncompleteTask.expectedOutputAr}
+            </p>
+          </article>
+          <article className="surface rounded-[30px] p-6">
+            <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-accent-soft)]">
+              Relevant help
+            </p>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4 text-sm leading-7 text-slate-300">
+                {firstIncompleteTask.helpNotesAr}
+              </div>
+              {firstIncompleteTask.resources.map((resource) => (
+                <div key={resource.id} className="rounded-2xl border border-white/6 bg-white/[0.03] p-4 text-sm text-slate-300">
+                  <p className="font-semibold text-white">{resource.label}</p>
+                  <p className="mt-2">{resource.contentItem?.titleAr || resource.toolkitItem?.titleAr}</p>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+      ) : null}
 
       <div className="space-y-5">
         {track.roadmapWeeks.map((week) => (

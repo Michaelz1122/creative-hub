@@ -1,4 +1,4 @@
-import { ContentType, PlanScope, TrackStatus } from "@prisma/client";
+import { ContentType, PlanScope, ResourceDifficulty, TrackStatus } from "@prisma/client";
 
 import { prisma } from "../src/lib/prisma";
 import { graphicDesignRoadmapSeed } from "../src/lib/roadmap-data";
@@ -11,14 +11,17 @@ import {
 } from "../src/lib/seed-constants";
 
 async function main() {
-  const permissionKeys = [
+  let firstRoadmapTaskId: string | null = null;
+  const permissionSeeds = [
     ["payments.review", "Review payments", "payments"],
     ["tracks.manage", "Manage tracks", "tracks"],
     ["roadmap.manage", "Manage roadmap", "roadmap"],
     ["memberships.manage", "Manage memberships", "memberships"],
-  ];
+    ["feedback.manage", "Manage feedback", "feedback"],
+    ["content.manage", "Manage content", "content"],
+  ] as const;
 
-  for (const [key, label, group] of permissionKeys) {
+  for (const [key, label, group] of permissionSeeds) {
     await prisma.permission.upsert({
       where: { key },
       update: { label, group },
@@ -207,59 +210,144 @@ async function main() {
     },
   });
 
+  await prisma.feedbackThread.deleteMany({ where: { trackId: track.id } });
   await prisma.contentItem.deleteMany({ where: { trackId: track.id } });
   await prisma.toolkitItem.deleteMany({ where: { trackId: track.id } });
   await prisma.quiz.deleteMany({ where: { trackId: track.id } });
   await prisma.roadmapWeek.deleteMany({ where: { trackId: track.id } });
 
   const contentSeeds = [
-    ["photoshop-basics", "Photoshop Basics Playlist", "سلسلة أساسيات فوتوشوب", ContentType.VIDEO],
-    ["social-layout-guide", "Social Layout Guide", "دليل بناء Layout للسوشيال", ContentType.GUIDE],
-    ["brand-case-notes", "Brand Case Notes", "ملاحظات تحليل براندات", ContentType.NOTE],
+    {
+      key: "photoshop-basics",
+      title: "Photoshop Basics Playlist",
+      titleAr: "سلسلة أساسيات فوتوشوب",
+      type: ContentType.VIDEO,
+      difficulty: ResourceDifficulty.BEGINNER,
+      estimatedMinutes: 28,
+      isRequired: true,
+    },
+    {
+      key: "arabic-type-setup",
+      title: "Arabic Type Setup Guide",
+      titleAr: "دليل ضبط الكتابة العربي",
+      type: ContentType.GUIDE,
+      difficulty: ResourceDifficulty.BEGINNER,
+      estimatedMinutes: 14,
+      isRequired: true,
+    },
+    {
+      key: "social-layout-guide",
+      title: "Social Layout Guide",
+      titleAr: "دليل بناء Layout للسوشيال",
+      type: ContentType.GUIDE,
+      difficulty: ResourceDifficulty.FOUNDATIONAL,
+      estimatedMinutes: 18,
+      isRequired: true,
+    },
+    {
+      key: "brand-case-notes",
+      title: "Brand Case Notes",
+      titleAr: "ملاحظات تحليل براندات",
+      type: ContentType.NOTE,
+      difficulty: ResourceDifficulty.FOUNDATIONAL,
+      estimatedMinutes: 10,
+      isRequired: false,
+    },
+    {
+      key: "export-checklist",
+      title: "Export Checklist",
+      titleAr: "قائمة مراجعة الـ Export",
+      type: ContentType.CHECKLIST,
+      difficulty: ResourceDifficulty.BEGINNER,
+      estimatedMinutes: 8,
+      isRequired: true,
+    },
+    {
+      key: "client-onboarding-reference",
+      title: "Client Onboarding Reference",
+      titleAr: "مرجع بداية التعامل مع العميل",
+      type: ContentType.REFERENCE,
+      difficulty: ResourceDifficulty.INTERMEDIATE,
+      estimatedMinutes: 12,
+      isRequired: false,
+    },
   ] as const;
 
   const contentMap = new Map<string, string>();
-  for (const [key, title, titleAr, type] of contentSeeds) {
+  for (const seed of contentSeeds) {
     const item = await prisma.contentItem.create({
       data: {
         trackId: track.id,
-        title,
-        titleAr,
-        type,
+        title: seed.title,
+        titleAr: seed.titleAr,
+        type: seed.type,
         provider: "Creative Hub",
-        summary: `${title} for the Graphic Design roadmap.`,
-        summaryAr: `${titleAr} ضمن محتوى مسار الجرافيك ديزاين.`,
-        url: `https://example.com/${key}`,
-        estimatedMinutes: 20,
-        isRequired: true,
+        summary: `${seed.title} for the Graphic Design roadmap.`,
+        summaryAr: `${seed.titleAr} ضمن محتوى مسار الجرافيك ديزاين.`,
+        url: `https://example.com/${seed.key}`,
+        estimatedMinutes: seed.estimatedMinutes,
+        difficulty: seed.difficulty,
+        isRequired: seed.isRequired,
         isPublished: true,
       },
     });
-    contentMap.set(key, item.id);
+    contentMap.set(seed.key, item.id);
   }
 
   const toolkitSeeds = [
-    ["starter-files", "Starter PSD Files", "ملفات PSD للبداية", "Starter files"],
-    ["font-pack", "Recommended Font Pack", "باقة خطوط مقترحة", "Fonts"],
-    ["brief-sheet", "Client Brief Sheet", "ورقة brief للعميل", "Career tools"],
+    {
+      key: "starter-files",
+      title: "Starter PSD Files",
+      titleAr: "ملفات PSD للبداية",
+      category: "Starter files",
+      summaryAr: "ملفات بداية مرتبة لتسريع أول أسبوعين.",
+    },
+    {
+      key: "font-pack",
+      title: "Recommended Font Pack",
+      titleAr: "باقة خطوط مقترحة",
+      category: "Fonts",
+      summaryAr: "مجموعة خطوط مناسبة للمبتدئ مع استخدامات واضحة.",
+    },
+    {
+      key: "social-grids",
+      title: "Social Grid Templates",
+      titleAr: "قوالب Grid للسوشيال",
+      category: "Templates",
+      summaryAr: "شبكات جاهزة تساعدك في بناء layouts أسرع.",
+    },
+    {
+      key: "brief-sheet",
+      title: "Client Brief Sheet",
+      titleAr: "ورقة brief للعميل",
+      category: "Career tools",
+      summaryAr: "نموذج بسيط لتنظيم طلبات العميل قبل التنفيذ.",
+    },
+    {
+      key: "delivery-checklist",
+      title: "Delivery Checklist",
+      titleAr: "قائمة مراجعة التسليم",
+      category: "Career tools",
+      summaryAr: "Checklist للتأكد أن التسليم النهائي منظم.",
+    },
   ] as const;
 
   const toolkitMap = new Map<string, string>();
-  for (const [key, title, titleAr, category] of toolkitSeeds) {
+  for (const seed of toolkitSeeds) {
     const item = await prisma.toolkitItem.create({
       data: {
         trackId: track.id,
-        title,
-        titleAr,
-        category,
-        summary: `${title} used inside the roadmap.`,
-        summaryAr: `${titleAr} مرتبطة بمهام داخل الـ roadmap.`,
-        fileUrl: `https://example.com/toolkits/${key}`,
-        isFeatured: true,
+        title: seed.title,
+        titleAr: seed.titleAr,
+        category: seed.category,
+        summary: `${seed.title} used inside the roadmap.`,
+        summaryAr: seed.summaryAr,
+        fileUrl: `https://example.com/toolkits/${seed.key}`,
+        isFeatured: seed.category !== "Career tools",
         isPublished: true,
       },
     });
-    toolkitMap.set(key, item.id);
+    toolkitMap.set(seed.key, item.id);
   }
 
   for (const [weekIndex, week] of graphicDesignRoadmapSeed.entries()) {
@@ -351,8 +439,13 @@ async function main() {
         },
       });
 
+      if (!firstRoadmapTaskId) {
+        firstRoadmapTaskId = task.id;
+      }
+
       const contentIds = Array.from(contentMap.values());
       const toolkitIds = Array.from(toolkitMap.values());
+
       await prisma.roadmapResourceLink.createMany({
         data: [
           {
@@ -370,6 +463,33 @@ async function main() {
     }
   }
 
+  const seededFeedback = await prisma.feedbackThread.create({
+    data: {
+      userId: learnerUser.id,
+      trackId: track.id,
+      roadmapTaskId: firstRoadmapTaskId,
+      type: "project",
+      title: "Review my social media promo design",
+      note: "I want feedback on hierarchy and whether the CTA feels clear enough.",
+      submissionUrl: "https://example.com/projects/promo-design",
+      status: "REVIEWED",
+      messages: {
+        create: [
+          {
+            authorUserId: learnerUser.id,
+            authorRole: "learner",
+            body: "This is my Week 4 promo design. I need feedback on hierarchy, CTA clarity, and whether the image treatment feels too heavy.",
+          },
+          {
+            authorUserId: adminUser.id,
+            authorRole: "admin",
+            body: "The layout direction is good, but the CTA block needs more contrast and the product image should have more breathing room. Keep the top line shorter and increase the CTA button size slightly.",
+          },
+        ],
+      },
+    },
+  });
+
   await prisma.notification.createMany({
     data: [
       {
@@ -382,12 +502,21 @@ async function main() {
         href: "/dashboard/tracks/graphic-design",
       },
       {
+        userId: learnerUser.id,
+        type: "FEEDBACK",
+        title: "Feedback reviewed",
+        titleAr: "تمت مراجعة طلب الفيدباك",
+        body: "Your latest Graphic Design feedback thread has a reply.",
+        bodyAr: "آخر طلب feedback في مسار الجرافيك ديزاين أصبح عليه رد.",
+        href: "/dashboard/feedback",
+      },
+      {
         userId: adminUser.id,
         type: "ANNOUNCEMENT",
         title: "Seed data refreshed",
         titleAr: "تم تحديث بيانات البداية",
-        body: "Graphic Design roadmap, plans, and users were seeded.",
-        bodyAr: "تم تجهيز بيانات المسار والخطط والمستخدمين.",
+        body: "Graphic Design roadmap, plans, users, and feedback were seeded.",
+        bodyAr: "تم تجهيز بيانات المسار والخطط والمستخدمين والـ feedback.",
         href: "/admin",
       },
     ],
@@ -414,6 +543,16 @@ async function main() {
       startsAt: new Date(),
       expiresAt: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
       source: "seed",
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorUserId: adminUser.id,
+      entityType: "Seed",
+      entityId: seededFeedback.id,
+      action: "seed",
+      summary: "Graphic Design content, toolkits, roadmap, and feedback were seeded.",
     },
   });
 

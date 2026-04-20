@@ -79,6 +79,7 @@ model User {
   paymentRequests  PaymentRequest[]
   couponRedemptions CouponRedemption[]
   feedbackThreads  FeedbackThread[]
+  feedbackMessages FeedbackMessage[]
   taskCompletions  TaskCompletion[]
   quizAttempts     QuizAttempt[]
   notifications    Notification[]
@@ -307,6 +308,7 @@ model RoadmapTask {
   day              RoadmapDay   @relation(fields: [dayId], references: [id], onDelete: Cascade)
   resources        RoadmapResourceLink[]
   completions      TaskCompletion[]
+  feedbackThreads  FeedbackThread[]
 
   @@unique([dayId, order])
 }
@@ -439,6 +441,7 @@ model FeedbackThread {
   id             String         @id @default(cuid())
   userId         String
   trackId        String?
+  roadmapTaskId  String?
   type           String
   title          String
   note           String?
@@ -448,6 +451,19 @@ model FeedbackThread {
   updatedAt      DateTime       @updatedAt
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   track          Track?         @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  roadmapTask    RoadmapTask?   @relation(fields: [roadmapTaskId], references: [id], onDelete: SetNull)
+  messages       FeedbackMessage[]
+}
+
+model FeedbackMessage {
+  id           String         @id @default(cuid())
+  threadId     String
+  authorUserId String?
+  authorRole   String
+  body         String
+  createdAt    DateTime       @default(now())
+  thread       FeedbackThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorUser   User?          @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
 }
 
 model Notification {

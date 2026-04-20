@@ -20,7 +20,12 @@ export default async function DashboardBillingPage({
     }),
     prisma.paymentRequest.findMany({
       where: { userId: user.id },
-      include: { plan: true },
+      include: {
+        plan: true,
+        reviewLogs: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
       orderBy: { submittedAt: "desc" },
     }),
     getDashboardData(user.id),
@@ -32,29 +37,60 @@ export default async function DashboardBillingPage({
         <p className="text-xs uppercase tracking-[0.26em] text-[var(--color-accent-soft)]">
           Membership & Billing
         </p>
-        <h1 className="mt-3 text-4xl font-semibold text-white">رفع إثبات الدفع وتتبعه</h1>
+        <h1 className="mt-3 text-4xl font-semibold text-white">حالة العضوية والدفع في مكان واحد</h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300">
-          هذا flow حقيقي الآن: ترفع receipt، يتم إنشاء `PaymentRequest`، تظهر في admin queue، ثم approve/reject يغير membership status والـ access.
+          هنا ترى ما هو مفتوح لك الآن، متى تنتهي العضوية، وما الذي ينتظر المراجعة أو تم قبوله أو رفضه سابقًا.
         </p>
       </div>
 
       {resolvedSearchParams?.success ? (
         <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-          Payment request submitted successfully.
+          تم إرسال طلب الدفع بنجاح وهو الآن تحت المراجعة.
         </div>
       ) : null}
 
       {resolvedSearchParams?.error ? (
         <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-          Could not submit payment. Check the required fields or any pending request.
+          تعذر إرسال طلب الدفع. تأكد من الحقول المطلوبة أو من عدم وجود طلب pending حالي.
         </div>
       ) : null}
+
+      <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <div className="surface rounded-[28px] p-5">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Active memberships</p>
+          <p className="mt-3 text-3xl font-semibold text-white">
+            {data?.entitlements.activeMemberships.length || 0}
+          </p>
+        </div>
+        <div className="surface rounded-[28px] p-5">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Unlocked scope</p>
+          <p className="mt-3 text-lg font-semibold text-white">
+            {data?.entitlements.hasAllAccess
+              ? "All Access"
+              : `${data?.entitlements.activeTrackIds.length || 0} track(s)`}
+          </p>
+        </div>
+        <div className="surface rounded-[28px] p-5">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Pending requests</p>
+          <p className="mt-3 text-3xl font-semibold text-white">
+            {paymentRequests.filter((request) => request.status === "SUBMITTED").length}
+          </p>
+        </div>
+        <div className="surface rounded-[28px] p-5">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Next expiry</p>
+          <p className="mt-3 text-lg font-semibold text-white">
+            {data?.entitlements.activeMemberships[0]?.expiresAt
+              ? new Date(data.entitlements.activeMemberships[0].expiresAt).toLocaleDateString()
+              : "No active expiry"}
+          </p>
+        </div>
+      </section>
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <article className="surface rounded-[30px] p-6">
           <h2 className="text-2xl font-semibold text-white">Submit a new payment</h2>
           <p className="mt-3 text-sm leading-7 text-slate-400">
-            Vodafone Cash only for now. Upload a receipt screenshot and the request goes directly to admin review.
+            Vodafone Cash فقط حاليًا. ارفع screenshot واضحة وسيذهب الطلب مباشرة إلى admin review queue.
           </p>
 
           <form action={submitPaymentAction} className="mt-6 space-y-4">
@@ -121,7 +157,7 @@ export default async function DashboardBillingPage({
                 name="note"
                 rows={4}
                 className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white outline-none"
-                placeholder="Any note for the admin reviewer"
+                placeholder="أي ملاحظة إضافية للإدارة"
               />
             </div>
             <button
@@ -135,16 +171,25 @@ export default async function DashboardBillingPage({
 
         <article className="space-y-5">
           <div className="surface rounded-[30px] p-6">
-            <h2 className="text-2xl font-semibold text-white">Current access</h2>
-            <p className="mt-4 text-sm leading-7 text-slate-300">
-              {data?.entitlements.activeMemberships.length
-                ? data.entitlements.activeMemberships.map((membership) => membership.plan.nameAr).join(", ")
-                : "No active membership yet."}
-            </p>
+            <h2 className="text-2xl font-semibold text-white">Current unlocked access</h2>
+            {data?.entitlements.activeMemberships.length ? (
+              <div className="mt-5 space-y-3">
+                {data.entitlements.activeMemberships.map((membership) => (
+                  <div key={membership.id} className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
+                    <p className="font-semibold text-white">{membership.plan.nameAr}</p>
+                    <p className="mt-2 text-sm text-slate-400">
+                      Active until {membership.expiresAt ? new Date(membership.expiresAt).toLocaleDateString() : "N/A"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm leading-7 text-slate-300">لا توجد عضوية مفعلة حتى الآن.</p>
+            )}
           </div>
 
           <div className="surface rounded-[30px] p-6">
-            <h2 className="text-2xl font-semibold text-white">Payment requests history</h2>
+            <h2 className="text-2xl font-semibold text-white">Payment request history</h2>
             <div className="mt-5 space-y-4">
               {paymentRequests.map((request) => (
                 <div key={request.id} className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
@@ -152,21 +197,25 @@ export default async function DashboardBillingPage({
                     <div>
                       <p className="font-semibold text-white">{request.plan.nameAr}</p>
                       <p className="mt-2 text-sm text-slate-400">
-                        Status: {request.status} - {new Date(request.submittedAt).toLocaleDateString()}
+                        {request.status} - {new Date(request.submittedAt).toLocaleDateString()}
                       </p>
+                      {request.reviewedAt ? (
+                        <p className="mt-1 text-sm text-slate-500">
+                          Reviewed: {new Date(request.reviewedAt).toLocaleDateString()}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="relative h-20 w-20 overflow-hidden rounded-2xl border border-white/8">
-                      <Image
-                        src={request.receiptUrl}
-                        alt="Receipt"
-                        fill
-                        sizes="80px"
-                        className="object-cover"
-                      />
+                      <Image src={request.receiptUrl} alt="Receipt" fill sizes="80px" className="object-cover" />
                     </div>
                   </div>
                   {request.adminNote ? (
                     <p className="mt-3 text-sm leading-7 text-slate-300">{request.adminNote}</p>
+                  ) : null}
+                  {request.reviewLogs[0] ? (
+                    <p className="mt-3 text-xs uppercase tracking-[0.22em] text-slate-500">
+                      Last review action: {request.reviewLogs[0].action}
+                    </p>
                   ) : null}
                 </div>
               ))}
@@ -177,3 +226,4 @@ export default async function DashboardBillingPage({
     </div>
   );
 }
+
