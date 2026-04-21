@@ -1,6 +1,21 @@
+import { requireAnyPermission } from "@/lib/auth";
 import { adminSnapshot } from "@/lib/site-content";
 
-export default function AdminOverviewPage() {
+export default async function AdminOverviewPage() {
+  await requireAnyPermission([
+    "users.manage",
+    "payments.review",
+    "tracks.manage",
+    "roadmap.manage",
+    "memberships.manage",
+    "feedback.manage",
+    "content.manage",
+    "coupons.manage",
+    "quizzes.manage",
+    "plans.manage",
+    "roles.manage",
+  ]);
+
   return (
     <div className="space-y-8">
       <div>

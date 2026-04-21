@@ -1,4 +1,5 @@
 import { adminRespondToFeedbackAction } from "@/app/actions/feedback";
+import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const feedbackStatusLabels: Record<string, string> = {
@@ -14,6 +15,7 @@ export default async function AdminFeedbackPage({
 }: {
   searchParams?: Promise<{ success?: string; error?: string }>;
 }) {
+  await requirePermission("feedback.manage");
   const resolvedSearchParams = await searchParams;
   const threads = await prisma.feedbackThread.findMany({
     include: {

@@ -1,24 +1,31 @@
 import { ContentType, PlanScope, ResourceDifficulty, TrackStatus } from "@prisma/client";
 
+import { hashPassword } from "../src/lib/auth";
 import { prisma } from "../src/lib/prisma";
 import { graphicDesignRoadmapSeed } from "../src/lib/roadmap-data";
 import {
   ADMIN_EMAIL,
+  ADMIN_PASSWORD,
   ALL_ACCESS_PLAN_CODE,
   GRAPHIC_DESIGN_PLAN_CODE,
   GRAPHIC_DESIGN_TRACK_SLUG,
   LEARNER_EMAIL,
+  LEARNER_PASSWORD,
 } from "../src/lib/seed-constants";
 
-async function main() {
-  let firstRoadmapTaskId: string | null = null;
+async function seedPermissions() {
   const permissionSeeds = [
+    ["users.manage", "Manage users", "users"],
     ["payments.review", "Review payments", "payments"],
     ["tracks.manage", "Manage tracks", "tracks"],
     ["roadmap.manage", "Manage roadmap", "roadmap"],
     ["memberships.manage", "Manage memberships", "memberships"],
     ["feedback.manage", "Manage feedback", "feedback"],
     ["content.manage", "Manage content", "content"],
+    ["coupons.manage", "Manage coupons", "coupons"],
+    ["quizzes.manage", "Manage quizzes", "quizzes"],
+    ["plans.manage", "Manage plans", "plans"],
+    ["roles.manage", "Manage roles", "roles"],
   ] as const;
 
   for (const [key, label, group] of permissionSeeds) {
@@ -28,7 +35,9 @@ async function main() {
       create: { key, label, group },
     });
   }
+}
 
+async function seedRoles(adminUserId: string) {
   const superAdmin = await prisma.role.upsert({
     where: { name: "super_admin" },
     update: { label: "Super Admin", isSystem: true },
@@ -84,62 +93,167 @@ async function main() {
     });
   }
 
-  const adminUser = await prisma.user.upsert({
-    where: { email: ADMIN_EMAIL },
-    update: { name: "Creative Hub Admin" },
-    create: {
-      email: ADMIN_EMAIL,
-      name: "Creative Hub Admin",
-    },
-  });
-
   await prisma.userRole.upsert({
     where: {
       userId_roleId: {
-        userId: adminUser.id,
+        userId: adminUserId,
         roleId: superAdmin.id,
       },
     },
     update: {},
     create: {
-      userId: adminUser.id,
+      userId: adminUserId,
       roleId: superAdmin.id,
+    },
+  });
+}
+
+async function seedUsers() {
+  const adminPasswordHash = hashPassword(ADMIN_PASSWORD);
+  const learnerPasswordHash = hashPassword(LEARNER_PASSWORD);
+
+  const adminUser = await prisma.user.upsert({
+    where: { email: ADMIN_EMAIL },
+    update: { name: "Creative Hub Admin", passwordHash: adminPasswordHash, passwordUpdatedAt: new Date() },
+    create: {
+      email: ADMIN_EMAIL,
+      name: "Creative Hub Admin",
+      passwordHash: adminPasswordHash,
+      passwordUpdatedAt: new Date(),
     },
   });
 
   const learnerUser = await prisma.user.upsert({
     where: { email: LEARNER_EMAIL },
-    update: { name: "Creative Hub Learner" },
+    update: { name: "Creative Hub Learner", passwordHash: learnerPasswordHash, passwordUpdatedAt: new Date() },
     create: {
       email: LEARNER_EMAIL,
       name: "Creative Hub Learner",
+      passwordHash: learnerPasswordHash,
+      passwordUpdatedAt: new Date(),
     },
   });
 
-  const track = await prisma.track.upsert({
+  const allAccessUser = await prisma.user.upsert({
+    where: { email: "allaccess@creativehub.eg" },
+    update: { name: "All Access Learner", passwordHash: learnerPasswordHash, passwordUpdatedAt: new Date() },
+    create: {
+      email: "allaccess@creativehub.eg",
+      name: "All Access Learner",
+      passwordHash: learnerPasswordHash,
+      passwordUpdatedAt: new Date(),
+    },
+  });
+
+  const expiredUser = await prisma.user.upsert({
+    where: { email: "expired@creativehub.eg" },
+    update: { name: "Expired Learner", passwordHash: learnerPasswordHash, passwordUpdatedAt: new Date() },
+    create: {
+      email: "expired@creativehub.eg",
+      name: "Expired Learner",
+      passwordHash: learnerPasswordHash,
+      passwordUpdatedAt: new Date(),
+    },
+  });
+
+  const pendingUser = await prisma.user.upsert({
+    where: { email: "pending@creativehub.eg" },
+    update: { name: "Pending Learner", passwordHash: learnerPasswordHash, passwordUpdatedAt: new Date() },
+    create: {
+      email: "pending@creativehub.eg",
+      name: "Pending Learner",
+      passwordHash: learnerPasswordHash,
+      passwordUpdatedAt: new Date(),
+    },
+  });
+
+  return {
+    adminUser,
+    learnerUser,
+    allAccessUser,
+    expiredUser,
+    pendingUser,
+  };
+}
+
+async function seedTracks() {
+  const graphicDesignTrack = await prisma.track.upsert({
     where: { slug: GRAPHIC_DESIGN_TRACK_SLUG },
     update: {
-      status: TrackStatus.ACTIVE,
+      name: "Graphic Design",
+      nameAr: "الجرافيك ديزاين",
       summary: "Graphic Design is the first active track for paid learners.",
-      summaryAr: "الجرافيك ديزاين هو أول مسار متاح فعليًا للمشتركين.",
+      summaryAr: "الجرافيك ديزاين هو أول مسار متاح فعليًا للمتعلمين المشتركين.",
+      status: TrackStatus.ACTIVE,
+      isFeatured: true,
+      sortOrder: 1,
       roadmapLengthDays: 60,
       accentColor: "#f3b63f",
+      heroImageUrl: "https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=1200&q=80",
     },
     create: {
       slug: GRAPHIC_DESIGN_TRACK_SLUG,
       name: "Graphic Design",
       nameAr: "الجرافيك ديزاين",
       summary: "Graphic Design is the first active track for paid learners.",
-      summaryAr: "الجرافيك ديزاين هو أول مسار متاح فعليًا للمشتركين.",
+      summaryAr: "الجرافيك ديزاين هو أول مسار متاح فعليًا للمتعلمين المشتركين.",
       status: TrackStatus.ACTIVE,
       isFeatured: true,
+      sortOrder: 1,
       roadmapLengthDays: 60,
       accentColor: "#f3b63f",
+      heroImageUrl: "https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=1200&q=80",
+    },
+  });
+
+  await prisma.track.upsert({
+    where: { slug: "media-buying" },
+    update: {
+      name: "Media Buying",
+      nameAr: "الميديا بايينج",
+      summary: "Media Buying track is preparing for launch.",
+      summaryAr: "مسار الميديا بايينج قيد التجهيز للإطلاق.",
+      status: TrackStatus.COMING_SOON,
+      sortOrder: 2,
+      accentColor: "#3cc7c7",
+    },
+    create: {
+      slug: "media-buying",
+      name: "Media Buying",
+      nameAr: "الميديا بايينج",
+      summary: "Media Buying track is preparing for launch.",
+      summaryAr: "مسار الميديا بايينج قيد التجهيز للإطلاق.",
+      status: TrackStatus.COMING_SOON,
+      sortOrder: 2,
+      accentColor: "#3cc7c7",
+    },
+  });
+
+  await prisma.track.upsert({
+    where: { slug: "video-editing" },
+    update: {
+      name: "Video Editing",
+      nameAr: "الفيديو إيديتنج",
+      summary: "Video Editing track is preparing for launch.",
+      summaryAr: "مسار الفيديو إيديتنج قيد التجهيز للإطلاق.",
+      status: TrackStatus.COMING_SOON,
+      sortOrder: 3,
+      accentColor: "#ee7d47",
+    },
+    create: {
+      slug: "video-editing",
+      name: "Video Editing",
+      nameAr: "الفيديو إيديتنج",
+      summary: "Video Editing track is preparing for launch.",
+      summaryAr: "مسار الفيديو إيديتنج قيد التجهيز للإطلاق.",
+      status: TrackStatus.COMING_SOON,
+      sortOrder: 3,
+      accentColor: "#ee7d47",
     },
   });
 
   await prisma.trackCommunity.upsert({
-    where: { trackId: track.id },
+    where: { trackId: graphicDesignTrack.id },
     update: {
       label: "Graphic Design WhatsApp Community",
       description: "Members-only WhatsApp community for Graphic Design learners.",
@@ -147,7 +261,7 @@ async function main() {
       isEnabled: true,
     },
     create: {
-      trackId: track.id,
+      trackId: graphicDesignTrack.id,
       label: "Graphic Design WhatsApp Community",
       description: "Members-only WhatsApp community for Graphic Design learners.",
       inviteUrl: "https://chat.whatsapp.com/example-creative-hub-design",
@@ -155,13 +269,20 @@ async function main() {
     },
   });
 
+  return graphicDesignTrack;
+}
+
+async function seedPlans(trackId: string) {
   const graphicDesignPlan = await prisma.plan.upsert({
     where: { code: GRAPHIC_DESIGN_PLAN_CODE },
     update: {
+      name: "Graphic Design Annual",
+      nameAr: "الاشتراك السنوي لمسار الجرافيك ديزاين",
       priceCents: 499,
       currency: "EGP",
       scope: PlanScope.TRACK,
-      trackId: track.id,
+      trackId,
+      durationDays: 365,
       isActive: true,
     },
     create: {
@@ -171,16 +292,20 @@ async function main() {
       priceCents: 499,
       currency: "EGP",
       scope: PlanScope.TRACK,
-      trackId: track.id,
+      trackId,
+      durationDays: 365,
     },
   });
 
-  await prisma.plan.upsert({
+  const allAccessPlan = await prisma.plan.upsert({
     where: { code: ALL_ACCESS_PLAN_CODE },
     update: {
+      name: "All Access Annual",
+      nameAr: "الاشتراك السنوي الشامل لكل المسارات",
       priceCents: 799,
       currency: "EGP",
       scope: PlanScope.ALL_ACCESS,
+      durationDays: 365,
       isActive: true,
     },
     create: {
@@ -190,15 +315,22 @@ async function main() {
       priceCents: 799,
       currency: "EGP",
       scope: PlanScope.ALL_ACCESS,
+      durationDays: 365,
     },
   });
 
+  return { graphicDesignPlan, allAccessPlan };
+}
+
+async function seedCoupons(trackId: string) {
   await prisma.coupon.upsert({
     where: { code: "WELCOME10" },
     update: {
       label: "Welcome 10%",
       discountType: "percentage",
       discountValue: 10,
+      planScope: PlanScope.TRACK,
+      trackId,
       isActive: true,
     },
     create: {
@@ -206,15 +338,56 @@ async function main() {
       label: "Welcome 10%",
       discountType: "percentage",
       discountValue: 10,
+      planScope: PlanScope.TRACK,
+      trackId,
       isActive: true,
     },
   });
 
-  await prisma.feedbackThread.deleteMany({ where: { trackId: track.id } });
-  await prisma.contentItem.deleteMany({ where: { trackId: track.id } });
-  await prisma.toolkitItem.deleteMany({ where: { trackId: track.id } });
-  await prisma.quiz.deleteMany({ where: { trackId: track.id } });
-  await prisma.roadmapWeek.deleteMany({ where: { trackId: track.id } });
+  await prisma.coupon.upsert({
+    where: { code: "ALL25" },
+    update: {
+      label: "All Access 25%",
+      discountType: "percentage",
+      discountValue: 25,
+      planScope: PlanScope.ALL_ACCESS,
+      isActive: true,
+    },
+    create: {
+      code: "ALL25",
+      label: "All Access 25%",
+      discountType: "percentage",
+      discountValue: 25,
+      planScope: PlanScope.ALL_ACCESS,
+      isActive: true,
+    },
+  });
+
+  await prisma.coupon.upsert({
+    where: { code: "FREEGD" },
+    update: {
+      label: "Free Graphic Design Access",
+      discountType: "free",
+      discountValue: 100,
+      planScope: PlanScope.TRACK,
+      trackId,
+      isActive: true,
+    },
+    create: {
+      code: "FREEGD",
+      label: "Free Graphic Design Access",
+      discountType: "free",
+      discountValue: 100,
+      planScope: PlanScope.TRACK,
+      trackId,
+      isActive: true,
+    },
+  });
+}
+
+async function seedContentAndToolkits(trackId: string) {
+  await prisma.contentItem.deleteMany({ where: { trackId } });
+  await prisma.toolkitItem.deleteMany({ where: { trackId } });
 
   const contentSeeds = [
     {
@@ -273,27 +446,6 @@ async function main() {
     },
   ] as const;
 
-  const contentMap = new Map<string, string>();
-  for (const seed of contentSeeds) {
-    const item = await prisma.contentItem.create({
-      data: {
-        trackId: track.id,
-        title: seed.title,
-        titleAr: seed.titleAr,
-        type: seed.type,
-        provider: "Creative Hub",
-        summary: `${seed.title} for the Graphic Design roadmap.`,
-        summaryAr: `${seed.titleAr} ضمن محتوى مسار الجرافيك ديزاين.`,
-        url: `https://example.com/${seed.key}`,
-        estimatedMinutes: seed.estimatedMinutes,
-        difficulty: seed.difficulty,
-        isRequired: seed.isRequired,
-        isPublished: true,
-      },
-    });
-    contentMap.set(seed.key, item.id);
-  }
-
   const toolkitSeeds = [
     {
       key: "starter-files",
@@ -332,11 +484,35 @@ async function main() {
     },
   ] as const;
 
+  const contentMap = new Map<string, string>();
+  for (const [index, seed] of contentSeeds.entries()) {
+    const item = await prisma.contentItem.create({
+      data: {
+        trackId,
+        title: seed.title,
+        titleAr: seed.titleAr,
+        type: seed.type,
+        provider: "Creative Hub",
+        summary: `${seed.title} for the Graphic Design roadmap.`,
+        summaryAr: `${seed.titleAr} ضمن محتوى مسار الجرافيك ديزاين.`,
+        url: `https://example.com/${seed.key}`,
+        estimatedMinutes: seed.estimatedMinutes,
+        difficulty: seed.difficulty,
+        isRequired: seed.isRequired,
+        isFeatured: seed.isRequired,
+        isPublished: true,
+        sortOrder: index + 1,
+        tags: [seed.key.replace(/-/g, " "), seed.type.toLowerCase()],
+      },
+    });
+    contentMap.set(seed.key, item.id);
+  }
+
   const toolkitMap = new Map<string, string>();
   for (const seed of toolkitSeeds) {
     const item = await prisma.toolkitItem.create({
       data: {
-        trackId: track.id,
+        trackId,
         title: seed.title,
         titleAr: seed.titleAr,
         category: seed.category,
@@ -350,10 +526,20 @@ async function main() {
     toolkitMap.set(seed.key, item.id);
   }
 
+  return { contentMap, toolkitMap };
+}
+
+async function seedRoadmap(trackId: string, contentMap: Map<string, string>, toolkitMap: Map<string, string>) {
+  await prisma.quiz.deleteMany({ where: { trackId } });
+  await prisma.roadmapWeek.deleteMany({ where: { trackId } });
+
+  let firstRoadmapTaskId: string | null = null;
+  let firstQuizId: string | null = null;
+
   for (const [weekIndex, week] of graphicDesignRoadmapSeed.entries()) {
     const createdWeek = await prisma.roadmapWeek.create({
       data: {
-        trackId: track.id,
+        trackId,
         order: weekIndex + 1,
         title: week.title,
         titleAr: week.titleAr,
@@ -369,15 +555,20 @@ async function main() {
 
     const quiz = await prisma.quiz.create({
       data: {
-        trackId: track.id,
+        trackId,
         weekId: createdWeek.id,
         title: week.quizTitle,
         titleAr: week.quizTitleAr,
         scope: weekIndex === graphicDesignRoadmapSeed.length - 1 ? "final" : "weekly",
         passingScore: 70,
+        completionRule: "pass_score",
         isPublished: true,
       },
     });
+
+    if (!firstQuizId) {
+      firstQuizId = quiz.id;
+    }
 
     const question = await prisma.quizQuestion.create({
       data: {
@@ -463,11 +654,30 @@ async function main() {
     }
   }
 
+  return {
+    firstRoadmapTaskId,
+    firstQuizId,
+  };
+}
+
+async function seedFeedbackAndNotifications(input: {
+  adminUserId: string;
+  learnerUserId: string;
+  trackId: string;
+  firstRoadmapTaskId: string | null;
+}) {
+  await prisma.feedbackThread.deleteMany({
+    where: {
+      trackId: input.trackId,
+      userId: input.learnerUserId,
+    },
+  });
+
   const seededFeedback = await prisma.feedbackThread.create({
     data: {
-      userId: learnerUser.id,
-      trackId: track.id,
-      roadmapTaskId: firstRoadmapTaskId,
+      userId: input.learnerUserId,
+      trackId: input.trackId,
+      roadmapTaskId: input.firstRoadmapTaskId,
       type: "project",
       title: "Review my social media promo design",
       note: "I want feedback on hierarchy and whether the CTA feels clear enough.",
@@ -476,14 +686,14 @@ async function main() {
       messages: {
         create: [
           {
-            authorUserId: learnerUser.id,
+            authorUserId: input.learnerUserId,
             authorRole: "learner",
-            body: "This is my Week 4 promo design. I need feedback on hierarchy, CTA clarity, and whether the image treatment feels too heavy.",
+            body: "This is my Week 4 promo design. I need feedback on hierarchy, CTA clarity, and image treatment.",
           },
           {
-            authorUserId: adminUser.id,
+            authorUserId: input.adminUserId,
             authorRole: "admin",
-            body: "The layout direction is good, but the CTA block needs more contrast and the product image should have more breathing room. Keep the top line shorter and increase the CTA button size slightly.",
+            body: "Good direction. Increase CTA contrast, shorten the headline, and give the product image more breathing room.",
           },
         ],
       },
@@ -493,7 +703,7 @@ async function main() {
   await prisma.notification.createMany({
     data: [
       {
-        userId: learnerUser.id,
+        userId: input.learnerUserId,
         type: "ANNOUNCEMENT",
         title: "Graphic Design roadmap is ready",
         titleAr: "Roadmap الجرافيك ديزاين أصبحت جاهزة",
@@ -502,7 +712,7 @@ async function main() {
         href: "/dashboard/tracks/graphic-design",
       },
       {
-        userId: learnerUser.id,
+        userId: input.learnerUserId,
         type: "FEEDBACK",
         title: "Feedback reviewed",
         titleAr: "تمت مراجعة طلب الفيدباك",
@@ -511,7 +721,7 @@ async function main() {
         href: "/dashboard/feedback",
       },
       {
-        userId: adminUser.id,
+        userId: input.adminUserId,
         type: "ANNOUNCEMENT",
         title: "Seed data refreshed",
         titleAr: "تم تحديث بيانات البداية",
@@ -523,28 +733,222 @@ async function main() {
     skipDuplicates: true,
   });
 
+  return seededFeedback;
+}
+
+async function seedMemberships(input: {
+  learnerUserId: string;
+  allAccessUserId: string;
+  expiredUserId: string;
+  pendingUserId: string;
+  graphicDesignPlanId: string;
+  allAccessPlanId: string;
+}) {
+  const now = new Date();
+  const oneYearFromNow = new Date(now);
+  oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+
+  const oneYearAgo = new Date(now);
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+
   await prisma.membership.upsert({
     where: {
       userId_planId: {
-        userId: learnerUser.id,
-        planId: graphicDesignPlan.id,
+        userId: input.learnerUserId,
+        planId: input.graphicDesignPlanId,
       },
     },
     update: {
       status: "ACTIVE",
-      startsAt: new Date(),
-      expiresAt: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+      startsAt: now,
+      expiresAt: oneYearFromNow,
       source: "seed",
     },
     create: {
-      userId: learnerUser.id,
-      planId: graphicDesignPlan.id,
+      userId: input.learnerUserId,
+      planId: input.graphicDesignPlanId,
       status: "ACTIVE",
-      startsAt: new Date(),
-      expiresAt: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+      startsAt: now,
+      expiresAt: oneYearFromNow,
       source: "seed",
     },
   });
+
+  await prisma.membership.upsert({
+    where: {
+      userId_planId: {
+        userId: input.allAccessUserId,
+        planId: input.allAccessPlanId,
+      },
+    },
+    update: {
+      status: "ACTIVE",
+      startsAt: now,
+      expiresAt: oneYearFromNow,
+      source: "seed_all_access",
+    },
+    create: {
+      userId: input.allAccessUserId,
+      planId: input.allAccessPlanId,
+      status: "ACTIVE",
+      startsAt: now,
+      expiresAt: oneYearFromNow,
+      source: "seed_all_access",
+    },
+  });
+
+  await prisma.membership.upsert({
+    where: {
+      userId_planId: {
+        userId: input.expiredUserId,
+        planId: input.graphicDesignPlanId,
+      },
+    },
+    update: {
+      status: "EXPIRED",
+      startsAt: oneYearAgo,
+      expiresAt: yesterday,
+      source: "seed_expired",
+    },
+    create: {
+      userId: input.expiredUserId,
+      planId: input.graphicDesignPlanId,
+      status: "EXPIRED",
+      startsAt: oneYearAgo,
+      expiresAt: yesterday,
+      source: "seed_expired",
+    },
+  });
+
+  await prisma.membership.upsert({
+    where: {
+      userId_planId: {
+        userId: input.pendingUserId,
+        planId: input.graphicDesignPlanId,
+      },
+    },
+    update: {
+      status: "PENDING",
+      startsAt: null,
+      expiresAt: null,
+      source: "seed_pending",
+    },
+    create: {
+      userId: input.pendingUserId,
+      planId: input.graphicDesignPlanId,
+      status: "PENDING",
+      startsAt: null,
+      expiresAt: null,
+      source: "seed_pending",
+    },
+  });
+}
+
+async function seedUserNotes(input: {
+  adminUserId: string;
+  learnerUserId: string;
+  expiredUserId: string;
+  allAccessUserId: string;
+}) {
+  await prisma.adminUserNote.deleteMany({
+    where: {
+      userId: {
+        in: [input.learnerUserId, input.expiredUserId, input.allAccessUserId],
+      },
+    },
+  });
+
+  await prisma.adminUserNote.createMany({
+    data: [
+      {
+        userId: input.learnerUserId,
+        authorUserId: input.adminUserId,
+        body: "ملتزم في المسار الحالي ويحتاج متابعة خفيفة فقط.",
+      },
+      {
+        userId: input.expiredUserId,
+        authorUserId: input.adminUserId,
+        body: "انتهت العضوية السابقة. مناسب لعرض renewal discount لو رجع.",
+      },
+      {
+        userId: input.allAccessUserId,
+        authorUserId: input.adminUserId,
+        body: "مشترك شامل ويمكن استخدامه لاختبار جميع صلاحيات all-access.",
+      },
+    ],
+  });
+}
+
+async function seedQuizAttempt(quizId: string | null, learnerUserId: string) {
+  if (!quizId) {
+    return;
+  }
+
+  await prisma.quizAttempt.create({
+    data: {
+      quizId,
+      userId: learnerUserId,
+      score: 85,
+      status: "passed",
+      answers: {
+        note: "Seeded attempt for admin visibility",
+      },
+    },
+  });
+}
+
+async function main() {
+  await prisma.paymentReviewLog.deleteMany();
+  await prisma.paymentRequest.deleteMany();
+  await prisma.couponRedemption.deleteMany();
+  await prisma.notification.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.taskCompletion.deleteMany();
+  await prisma.session.deleteMany();
+  await prisma.rateLimitBucket.deleteMany();
+  await seedPermissions();
+
+  const { adminUser, learnerUser, allAccessUser, expiredUser, pendingUser } = await seedUsers();
+  await seedRoles(adminUser.id);
+
+  const graphicDesignTrack = await seedTracks();
+  const { graphicDesignPlan, allAccessPlan } = await seedPlans(graphicDesignTrack.id);
+  await seedCoupons(graphicDesignTrack.id);
+
+  const { contentMap, toolkitMap } = await seedContentAndToolkits(graphicDesignTrack.id);
+  const { firstRoadmapTaskId, firstQuizId } = await seedRoadmap(
+    graphicDesignTrack.id,
+    contentMap,
+    toolkitMap,
+  );
+
+  const seededFeedback = await seedFeedbackAndNotifications({
+    adminUserId: adminUser.id,
+    learnerUserId: learnerUser.id,
+    trackId: graphicDesignTrack.id,
+    firstRoadmapTaskId,
+  });
+
+  await seedMemberships({
+    learnerUserId: learnerUser.id,
+    allAccessUserId: allAccessUser.id,
+    expiredUserId: expiredUser.id,
+    pendingUserId: pendingUser.id,
+    graphicDesignPlanId: graphicDesignPlan.id,
+    allAccessPlanId: allAccessPlan.id,
+  });
+
+  await seedUserNotes({
+    adminUserId: adminUser.id,
+    learnerUserId: learnerUser.id,
+    expiredUserId: expiredUser.id,
+    allAccessUserId: allAccessUser.id,
+  });
+
+  await seedQuizAttempt(firstQuizId, learnerUser.id);
 
   await prisma.auditLog.create({
     data: {
@@ -552,7 +956,7 @@ async function main() {
       entityType: "Seed",
       entityId: seededFeedback.id,
       action: "seed",
-      summary: "Graphic Design content, toolkits, roadmap, and feedback were seeded.",
+      summary: "Creative Hub seed refreshed with roadmap, operations, users, plans, coupons, and feedback.",
     },
   });
 

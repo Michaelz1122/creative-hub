@@ -1,152 +1,220 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { requireAdmin, requireUser } from "@/lib/auth";
+import { requirePermission, requireUser } from "@/lib/auth";
+import { redeemFreeCouponForPlan, validateCouponForPlan } from "@/lib/coupons";
 import { activateMembershipFromPayment, calculateDiscountedPrice, rejectPaymentRequest } from "@/lib/payments";
 import { prisma } from "@/lib/prisma";
-import { storeReceiptFile } from "@/lib/storage";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { getReceiptUploadRules, storeReceiptFile } from "@/lib/storage";
+import {
+  getActionErrorCode,
+  parseCouponCodeField,
+  parseEgyptPhoneField,
+  rethrowRedirectError,
+  requireFormString,
+  validateUploadFile,
+  ValidationError,
+} from "@/lib/validation";
+
+function revalidatePaymentSurfaces() {
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/billing");
+  revalidatePath("/dashboard/community");
+  revalidatePath("/dashboard/tracks");
+  revalidatePath("/admin/payments");
+}
 
 export async function submitPaymentAction(formData: FormData) {
   const user = await requireUser();
-  const planId = String(formData.get("planId") || "");
-  const phoneNumber = String(formData.get("phoneNumber") || "").trim();
-  const couponCode = String(formData.get("couponCode") || "").trim().toUpperCase();
-  const note = String(formData.get("note") || "").trim();
-  const receipt = formData.get("receipt");
 
-  if (!planId || !phoneNumber || !(receipt instanceof File) || receipt.size === 0) {
-    redirect("/dashboard/billing?error=missing-fields");
-  }
+  try {
+    await enforceRateLimit({
+      scope: "payment-submit",
+      key: user.id,
+      limit: 3,
+      windowMs: 1000 * 60 * 30,
+      blockMs: 1000 * 60 * 30,
+    });
 
-  const plan = await prisma.plan.findUnique({
-    where: { id: planId },
-    include: { track: true },
-  });
+    const planId = requireFormString(formData, "planId");
+    const phoneNumber = parseEgyptPhoneField(formData, "phoneNumber");
+    const couponCode = parseCouponCodeField(formData, "couponCode", { optional: true });
+    const note = String(formData.get("note") || "").trim();
+    const receipt = validateUploadFile(formData.get("receipt"), {
+      required: true,
+      ...getReceiptUploadRules(),
+    });
 
-  if (!plan || !plan.isActive) {
-    redirect("/dashboard/billing?error=invalid-plan");
-  }
+    if (!receipt) {
+      throw new ValidationError("missing-file", "A receipt image is required.");
+    }
 
-  const existingPending = await prisma.paymentRequest.findFirst({
-    where: {
-      userId: user.id,
-      status: "SUBMITTED",
-    },
-  });
+    const plan = await prisma.plan.findUnique({
+      where: { id: planId },
+      include: { track: true },
+    });
 
-  if (existingPending) {
-    redirect("/dashboard/billing?error=pending-exists");
-  }
+    if (!plan || !plan.isActive) {
+      throw new ValidationError("invalid-plan", "Selected plan is invalid.");
+    }
 
-  let coupon =
-    couponCode.length > 0
-      ? await prisma.coupon.findFirst({
-          where: {
-            code: couponCode,
-            isActive: true,
-          },
-        })
-      : null;
-
-  if (coupon?.expiresAt && coupon.expiresAt < new Date()) {
-    coupon = null;
-  }
-
-  if (coupon?.planScope && coupon.planScope !== plan.scope) {
-    coupon = null;
-  }
-
-  if (coupon?.trackId && coupon.trackId !== plan.trackId) {
-    coupon = null;
-  }
-
-  if (coupon?.maxUses !== null && coupon?.maxUses !== undefined && coupon.usedCount >= coupon.maxUses) {
-    coupon = null;
-  }
-
-  if (coupon?.perUserLimit) {
-    const userRedemptions = await prisma.couponRedemption.count({
+    const existingPending = await prisma.paymentRequest.findFirst({
       where: {
-        couponId: coupon.id,
         userId: user.id,
+        status: "SUBMITTED",
       },
     });
 
-    if (userRedemptions >= coupon.perUserLimit) {
-      coupon = null;
+    if (existingPending) {
+      throw new ValidationError("pending-exists", "A pending payment request already exists.");
     }
-  }
 
-  const pricing = calculateDiscountedPrice(plan.priceCents, coupon);
-  const receiptUrl = await storeReceiptFile(receipt);
+    let coupon = null;
+    let pricing = calculateDiscountedPrice(plan.priceCents, null);
 
-  await prisma.paymentRequest.create({
-    data: {
-      userId: user.id,
-      planId: plan.id,
-      couponCodeSnapshot: coupon?.code ?? null,
-      pricingSnapshot: {
-        originalPrice: pricing.originalPrice,
-        discountAmount: pricing.discountAmount,
-        finalPrice: pricing.finalPrice,
-        currency: plan.currency,
-        planCode: plan.code,
-        planName: plan.name,
+    if (couponCode) {
+      const couponValidation = await validateCouponForPlan({
+        db: prisma,
+        userId: user.id,
+        plan,
+        couponCode,
+      });
+
+      coupon = couponValidation.coupon;
+      pricing = couponValidation.pricing;
+    }
+
+    const receiptUrl = await storeReceiptFile(receipt);
+
+    await prisma.paymentRequest.create({
+      data: {
+        userId: user.id,
+        planId: plan.id,
+        couponCodeSnapshot: coupon?.code ?? null,
+        pricingSnapshot: {
+          originalPrice: pricing.originalPrice,
+          discountAmount: pricing.discountAmount,
+          finalPrice: pricing.finalPrice,
+          currency: plan.currency,
+          planCode: plan.code,
+          planName: plan.name,
+        },
+        receiptUrl,
+        phoneNumber,
+        note: note || null,
       },
-      receiptUrl,
-      phoneNumber,
-      note: note || null,
-    },
-  });
+    });
 
-  await prisma.notification.create({
-    data: {
+    await prisma.notification.create({
+      data: {
+        userId: user.id,
+        type: "PAYMENT",
+        title: "Payment submitted",
+        titleAr: "تم إرسال طلب الدفع",
+        body: "Your receipt is now waiting for admin review.",
+        bodyAr: "تم إرسال إثبات الدفع وهو الآن في انتظار مراجعة الإدارة.",
+        href: "/dashboard/billing",
+      },
+    });
+
+    revalidatePaymentSurfaces();
+    redirect("/dashboard/billing?success=submitted");
+  } catch (error) {
+    rethrowRedirectError(error);
+    redirect(`/dashboard/billing?error=${getActionErrorCode(error, "payment-submit-failed")}`);
+  }
+}
+
+export async function redeemFreeCouponAction(formData: FormData) {
+  const user = await requireUser();
+
+  try {
+    await enforceRateLimit({
+      scope: "coupon-redeem",
+      key: user.id,
+      limit: 5,
+      windowMs: 1000 * 60 * 30,
+      blockMs: 1000 * 60 * 30,
+    });
+
+    const planId = requireFormString(formData, "planId");
+    const couponCode = parseCouponCodeField(formData, "couponCode");
+
+    const plan = await prisma.plan.findUnique({
+      where: { id: planId },
+      include: { track: true },
+    });
+
+    if (!plan || !plan.isActive) {
+      throw new ValidationError("invalid-plan", "Selected plan is invalid.");
+    }
+
+    const { coupon } = await validateCouponForPlan({
+      db: prisma,
       userId: user.id,
-      type: "PAYMENT",
-      title: "Payment submitted",
-      titleAr: "تم إرسال طلب الدفع",
-      body: "Your receipt is now waiting for admin review.",
-      bodyAr: "تم إرسال إثبات الدفع وهو الآن في انتظار مراجعة الإدارة.",
-      href: "/dashboard/billing",
-    },
-  });
+      plan,
+      couponCode,
+      requireFreeCoupon: true,
+    });
 
-  redirect("/dashboard/billing?success=submitted");
+    await prisma.$transaction(async (tx) => {
+      await redeemFreeCouponForPlan({
+        db: tx,
+        coupon,
+        plan,
+        userId: user.id,
+      });
+    });
+
+    revalidatePaymentSurfaces();
+    redirect("/dashboard/billing?success=free-redeemed");
+  } catch (error) {
+    rethrowRedirectError(error);
+    redirect(`/dashboard/billing?error=${getActionErrorCode(error, "free-redeem-failed")}`);
+  }
 }
 
 export async function approvePaymentAction(formData: FormData) {
-  const admin = await requireAdmin();
-  const paymentRequestId = String(formData.get("paymentRequestId") || "");
-  const adminNote = String(formData.get("adminNote") || "").trim();
+  const admin = await requirePermission("payments.review");
 
-  if (!paymentRequestId) {
-    redirect("/admin/payments?error=missing-id");
+  try {
+    const paymentRequestId = requireFormString(formData, "paymentRequestId");
+    const adminNote = String(formData.get("adminNote") || "").trim();
+
+    await activateMembershipFromPayment({
+      paymentRequestId,
+      actorUserId: admin.id,
+      adminNote: adminNote || null,
+    });
+
+    revalidatePaymentSurfaces();
+    redirect("/admin/payments?success=approved");
+  } catch (error) {
+    rethrowRedirectError(error);
+    redirect(`/admin/payments?error=${getActionErrorCode(error, "approve-failed")}`);
   }
-
-  await activateMembershipFromPayment({
-    paymentRequestId,
-    actorUserId: admin.id,
-    adminNote: adminNote || null,
-  });
-
-  redirect("/admin/payments?success=approved");
 }
 
 export async function rejectPaymentAction(formData: FormData) {
-  const admin = await requireAdmin();
-  const paymentRequestId = String(formData.get("paymentRequestId") || "");
-  const adminNote = String(formData.get("adminNote") || "").trim();
+  const admin = await requirePermission("payments.review");
 
-  if (!paymentRequestId) {
-    redirect("/admin/payments?error=missing-id");
+  try {
+    const paymentRequestId = requireFormString(formData, "paymentRequestId");
+    const adminNote = String(formData.get("adminNote") || "").trim();
+
+    await rejectPaymentRequest({
+      paymentRequestId,
+      actorUserId: admin.id,
+      adminNote: adminNote || null,
+    });
+
+    revalidatePaymentSurfaces();
+    redirect("/admin/payments?success=rejected");
+  } catch (error) {
+    rethrowRedirectError(error);
+    redirect(`/admin/payments?error=${getActionErrorCode(error, "reject-failed")}`);
   }
-
-  await rejectPaymentRequest({
-    paymentRequestId,
-    actorUserId: admin.id,
-    adminNote: adminNote || null,
-  });
-
-  redirect("/admin/payments?success=rejected");
 }

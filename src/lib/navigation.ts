@@ -18,11 +18,15 @@ export const dashboardNav = [
 ];
 
 export const adminNav = [
-  { href: "/admin", label: "Overview", caption: "صورة تشغيلية" },
-  { href: "/admin/tracks", label: "Tracks", caption: "إدارة المسارات" },
-  { href: "/admin/payments", label: "Payments", caption: "مراجعة التحويلات" },
-  { href: "/admin/feedback", label: "Feedback", caption: "صندوق المراجعات" },
-  { href: "/admin/roadmap", label: "Roadmap Builder", caption: "الأسابيع والمهام" },
-  { href: "/admin/content", label: "Content", caption: "المكتبة والـ toolkits" },
-  { href: "/admin/settings", label: "Settings", caption: "الإعدادات العامة" },
+  { href: "/admin", label: "Overview", caption: "صورة تشغيلية", permissionKey: null },
+  { href: "/admin/users", label: "Users", caption: "المستخدمون والعضويات", permissionKey: "users.manage" },
+  { href: "/admin/payments", label: "Payments", caption: "مراجعة التحويلات", permissionKey: "payments.review" },
+  { href: "/admin/coupons", label: "Coupons", caption: "الكوبونات والاستخدام", permissionKey: "coupons.manage" },
+  { href: "/admin/quizzes", label: "Quizzes", caption: "الاختبارات والنتائج", permissionKey: "quizzes.manage" },
+  { href: "/admin/tracks", label: "Tracks", caption: "إدارة المسارات", permissionKey: "tracks.manage" },
+  { href: "/admin/feedback", label: "Feedback", caption: "صندوق المراجعات", permissionKey: "feedback.manage" },
+  { href: "/admin/roadmap", label: "Roadmap Builder", caption: "الأسابيع والمهام", permissionKey: "roadmap.manage" },
+  { href: "/admin/content", label: "Content", caption: "المكتبة والـ toolkits", permissionKey: "content.manage" },
+  { href: "/admin/settings", label: "Plans", caption: "الخطط والأسعار", permissionKey: "plans.manage" },
+  { href: "/admin/roles", label: "Roles", caption: "الأدوار والصلاحيات", permissionKey: "roles.manage" },
 ];

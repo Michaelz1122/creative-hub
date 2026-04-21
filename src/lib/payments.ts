@@ -1,10 +1,11 @@
 import { MembershipStatus, PaymentStatus, PlanScope, type Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { ValidationError } from "@/lib/validation";
 
-function getExpiryOneYearFrom(date: Date) {
+function getExpiryFromDuration(date: Date, durationDays: number) {
   const next = new Date(date);
-  next.setFullYear(next.getFullYear() + 1);
+  next.setDate(next.getDate() + durationDays);
   return next;
 }
 
@@ -70,15 +71,39 @@ export async function activateMembershipFromPayment(input: {
     });
 
     if (!paymentRequest) {
-      throw new Error("Payment request not found.");
+      throw new ValidationError("payment-not-found", "Payment request not found.");
+    }
+
+    if (paymentRequest.status === PaymentStatus.APPROVED) {
+      const existingMembership = await tx.membership.findUnique({
+        where: {
+          userId_planId: {
+            userId: paymentRequest.userId,
+            planId: paymentRequest.planId,
+          },
+        },
+        include: {
+          plan: {
+            include: {
+              track: true,
+            },
+          },
+        },
+      });
+
+      if (!existingMembership) {
+        throw new ValidationError("approved-without-membership", "Approved payment has no membership.");
+      }
+
+      return existingMembership;
     }
 
     if (paymentRequest.status !== PaymentStatus.SUBMITTED) {
-      throw new Error("Only submitted payments can be approved.");
+      throw new ValidationError("payment-not-submitted", "Only submitted payments can be approved.");
     }
 
     const now = new Date();
-    const expiresAt = getExpiryOneYearFrom(now);
+    const expiresAt = getExpiryFromDuration(now, paymentRequest.plan.durationDays);
     const coupon =
       paymentRequest.couponCodeSnapshot
         ? await tx.coupon.findUnique({
@@ -129,22 +154,30 @@ export async function activateMembershipFromPayment(input: {
     });
 
     if (coupon) {
-      await tx.coupon.update({
-        where: { id: coupon.id },
-        data: {
-          usedCount: {
-            increment: 1,
-          },
-        },
+      const redemptionKey = `payment:${paymentRequest.id}`;
+      const existingRedemption = await tx.couponRedemption.findUnique({
+        where: { redemptionKey },
       });
 
-      await tx.couponRedemption.create({
-        data: {
-          couponId: coupon.id,
-          userId: paymentRequest.userId,
-          paymentRequestId: paymentRequest.id,
-        },
-      });
+      if (!existingRedemption) {
+        await tx.coupon.update({
+          where: { id: coupon.id },
+          data: {
+            usedCount: {
+              increment: 1,
+            },
+          },
+        });
+
+        await tx.couponRedemption.create({
+          data: {
+            couponId: coupon.id,
+            userId: paymentRequest.userId,
+            paymentRequestId: paymentRequest.id,
+            redemptionKey,
+          },
+        });
+      }
     }
 
     await tx.notification.create({
@@ -194,11 +227,15 @@ export async function rejectPaymentRequest(input: {
     });
 
     if (!paymentRequest) {
-      throw new Error("Payment request not found.");
+      throw new ValidationError("payment-not-found", "Payment request not found.");
+    }
+
+    if (paymentRequest.status === PaymentStatus.REJECTED) {
+      return;
     }
 
     if (paymentRequest.status !== PaymentStatus.SUBMITTED) {
-      throw new Error("Only submitted payments can be rejected.");
+      throw new ValidationError("payment-not-submitted", "Only submitted payments can be rejected.");
     }
 
     const now = new Date();

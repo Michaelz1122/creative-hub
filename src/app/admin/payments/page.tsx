@@ -1,6 +1,7 @@
 import Image from "next/image";
 
 import { approvePaymentAction, rejectPaymentAction } from "@/app/actions/payments";
+import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export default async function AdminPaymentsPage({
@@ -8,6 +9,7 @@ export default async function AdminPaymentsPage({
 }: {
   searchParams?: Promise<{ success?: string; error?: string }>;
 }) {
+  await requirePermission("payments.review");
   const resolvedSearchParams = await searchParams;
   const [submittedRequests, processedRequests] = await Promise.all([
     prisma.paymentRequest.findMany({

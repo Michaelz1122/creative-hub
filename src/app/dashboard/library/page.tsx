@@ -66,7 +66,7 @@ export default async function DashboardLibraryPage({
         },
       },
     },
-    orderBy: [{ isRequired: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ isFeatured: "desc" }, { isRequired: "desc" }, { sortOrder: "asc" }, { createdAt: "desc" }],
   });
 
   const accessibleTracks = tracks.filter((track) => hasTrackAccess(entitlements, track.id));
@@ -168,6 +168,11 @@ export default async function DashboardLibraryPage({
               <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">
                 {item.isRequired ? "Required" : "Optional"}
               </span>
+              {item.isFeatured ? (
+                <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
+                  Featured
+                </span>
+              ) : null}
             </div>
             <h2 className="mt-4 text-2xl font-semibold text-white">{item.titleAr}</h2>
             <p className="mt-3 text-sm leading-7 text-slate-300">{item.summaryAr}</p>
