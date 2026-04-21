@@ -114,56 +114,86 @@ async function seedUsers() {
 
   const adminUser = await prisma.user.upsert({
     where: { email: ADMIN_EMAIL },
-    update: { name: "Creative Hub Admin", passwordHash: adminPasswordHash, passwordUpdatedAt: new Date() },
+    update: {
+      name: "Creative Hub Admin",
+      passwordHash: adminPasswordHash,
+      passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
+    },
     create: {
       email: ADMIN_EMAIL,
       name: "Creative Hub Admin",
       passwordHash: adminPasswordHash,
       passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
     },
   });
 
   const learnerUser = await prisma.user.upsert({
     where: { email: LEARNER_EMAIL },
-    update: { name: "Creative Hub Learner", passwordHash: learnerPasswordHash, passwordUpdatedAt: new Date() },
+    update: {
+      name: "Creative Hub Learner",
+      passwordHash: learnerPasswordHash,
+      passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
+    },
     create: {
       email: LEARNER_EMAIL,
       name: "Creative Hub Learner",
       passwordHash: learnerPasswordHash,
       passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
     },
   });
 
   const allAccessUser = await prisma.user.upsert({
     where: { email: "allaccess@creativehub.eg" },
-    update: { name: "All Access Learner", passwordHash: learnerPasswordHash, passwordUpdatedAt: new Date() },
+    update: {
+      name: "All Access Learner",
+      passwordHash: learnerPasswordHash,
+      passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
+    },
     create: {
       email: "allaccess@creativehub.eg",
       name: "All Access Learner",
       passwordHash: learnerPasswordHash,
       passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
     },
   });
 
   const expiredUser = await prisma.user.upsert({
     where: { email: "expired@creativehub.eg" },
-    update: { name: "Expired Learner", passwordHash: learnerPasswordHash, passwordUpdatedAt: new Date() },
+    update: {
+      name: "Expired Learner",
+      passwordHash: learnerPasswordHash,
+      passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
+    },
     create: {
       email: "expired@creativehub.eg",
       name: "Expired Learner",
       passwordHash: learnerPasswordHash,
       passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
     },
   });
 
   const pendingUser = await prisma.user.upsert({
     where: { email: "pending@creativehub.eg" },
-    update: { name: "Pending Learner", passwordHash: learnerPasswordHash, passwordUpdatedAt: new Date() },
+    update: {
+      name: "Pending Learner",
+      passwordHash: learnerPasswordHash,
+      passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
+    },
     create: {
       email: "pending@creativehub.eg",
       name: "Pending Learner",
       passwordHash: learnerPasswordHash,
       passwordUpdatedAt: new Date(),
+      emailVerifiedAt: new Date(),
     },
   });
 
@@ -901,6 +931,8 @@ async function seedQuizAttempt(quizId: string | null, learnerUserId: string) {
 }
 
 async function main() {
+  await prisma.authToken.deleteMany();
+  await prisma.emailDeliveryLog.deleteMany();
   await prisma.paymentReviewLog.deleteMany();
   await prisma.paymentRequest.deleteMany();
   await prisma.couponRedemption.deleteMany();

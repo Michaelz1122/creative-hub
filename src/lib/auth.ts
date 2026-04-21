@@ -1,8 +1,11 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
+import { AuthTokenPurpose } from "@prisma/client";
+
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { getAppUrl, getAuthPasswordPepper } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { ValidationError } from "@/lib/validation";
 
@@ -23,20 +26,20 @@ const ADMIN_PERMISSION_KEYS = [
   "roles.manage",
 ] as const;
 
-function normalizeEmail(email: string) {
+export function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
-}
-
-function getPasswordPepper() {
-  return process.env.AUTH_PASSWORD_PEPPER || "";
 }
 
 function hashSessionToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function hashAuthToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 function buildPasswordPayload(password: string, salt: string) {
-  return scryptSync(`${password}${getPasswordPepper()}`, salt, 64).toString("hex");
+  return scryptSync(`${password}${getAuthPasswordPepper()}`, salt, 64).toString("hex");
 }
 
 export function hashPassword(password: string) {
@@ -105,6 +108,7 @@ async function deleteSessionByToken(token: string | null) {
 }
 
 export async function createSession(userId: string) {
+  getAppUrl();
   const token = randomBytes(32).toString("base64url");
   const { ipAddress, userAgent } = await getRequestContext();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
@@ -153,6 +157,22 @@ export async function invalidateCurrentSession() {
   const token = await getSessionToken();
   await deleteSessionByToken(token);
   await clearSessionCookie();
+}
+
+type UserWithPermissionTree = {
+  userRoles?: Array<{
+    role: {
+      rolePermissions: Array<{
+        permission: {
+          key: string;
+        };
+      }>;
+    };
+  }>;
+} | null | undefined;
+
+export function getLoginDestination(user: UserWithPermissionTree) {
+  return getUserPermissionKeys(user).length > 0 ? "/admin" : "/dashboard";
 }
 
 export async function getCurrentUser() {
@@ -204,12 +224,7 @@ export async function getCurrentUser() {
   return session.user;
 }
 
-export function getUserPermissionKeys(
-  user:
-    | Awaited<ReturnType<typeof getCurrentUser>>
-    | null
-    | undefined,
-) {
+export function getUserPermissionKeys(user: UserWithPermissionTree) {
   return Array.from(
     new Set(
       (user?.userRoles || []).flatMap((entry) =>
@@ -219,13 +234,7 @@ export function getUserPermissionKeys(
   );
 }
 
-export function userHasPermission(
-  user:
-    | Awaited<ReturnType<typeof getCurrentUser>>
-    | null
-    | undefined,
-  permissionKey: string,
-) {
+export function userHasPermission(user: UserWithPermissionTree, permissionKey: string) {
   return getUserPermissionKeys(user).includes(permissionKey);
 }
 
@@ -308,10 +317,157 @@ export async function authenticateWithPassword(email: string, password: string) 
     throw new ValidationError("invalid-credentials", "Email or password is invalid.");
   }
 
+  if (!user.emailVerifiedAt) {
+    throw new ValidationError("email-not-verified", "Email verification is required before login.");
+  }
+
   if (user.isSuspended) {
     throw new ValidationError("suspended", "User is suspended.");
   }
 
   await createSession(user.id);
+  return user;
+}
+
+async function invalidateExistingAuthTokens(userId: string, purpose: AuthTokenPurpose) {
+  await prisma.authToken.updateMany({
+    where: {
+      userId,
+      purpose,
+      consumedAt: null,
+    },
+    data: {
+      consumedAt: new Date(),
+    },
+  });
+}
+
+export async function createAuthToken(input: {
+  userId: string;
+  purpose: AuthTokenPurpose;
+  expiresInHours: number;
+}) {
+  const rawToken = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + input.expiresInHours * 60 * 60 * 1000);
+
+  await invalidateExistingAuthTokens(input.userId, input.purpose);
+
+  await prisma.authToken.create({
+    data: {
+      userId: input.userId,
+      purpose: input.purpose,
+      tokenHash: hashAuthToken(rawToken),
+      expiresAt,
+    },
+  });
+
+  return {
+    rawToken,
+    expiresAt,
+  };
+}
+
+export async function consumeAuthToken(rawToken: string, purpose: AuthTokenPurpose) {
+  const now = new Date();
+  const token = await prisma.authToken.findUnique({
+    where: {
+      tokenHash: hashAuthToken(rawToken),
+    },
+    include: {
+      user: true,
+    },
+  });
+
+  if (!token || token.purpose !== purpose) {
+    throw new ValidationError("invalid-token", "Token is invalid.");
+  }
+
+  if (token.consumedAt) {
+    throw new ValidationError("token-already-used", "Token has already been used.");
+  }
+
+  if (token.expiresAt <= now) {
+    throw new ValidationError("token-expired", "Token is expired.");
+  }
+
+  await prisma.authToken.update({
+    where: { id: token.id },
+    data: {
+      consumedAt: now,
+    },
+  });
+
+  return token;
+}
+
+export async function registerLearnerAccount(input: {
+  email: string;
+  name?: string | null;
+  password: string;
+}) {
+  const email = normalizeEmail(input.email);
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (existingUser?.emailVerifiedAt) {
+    throw new ValidationError("email-already-registered", "Email is already registered.");
+  }
+
+  const passwordHash = hashPassword(input.password);
+  const user = existingUser
+    ? await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          name: input.name?.trim() || existingUser.name,
+          passwordHash,
+          passwordUpdatedAt: new Date(),
+          isSuspended: false,
+        },
+      })
+    : await prisma.user.create({
+        data: {
+          email,
+          name: input.name?.trim() || null,
+          passwordHash,
+          passwordUpdatedAt: new Date(),
+        },
+      });
+
+  return user;
+}
+
+export async function verifyEmailAddress(rawToken: string) {
+  const token = await consumeAuthToken(rawToken, AuthTokenPurpose.EMAIL_VERIFICATION);
+
+  const user = await prisma.user.update({
+    where: { id: token.userId },
+    data: {
+      emailVerifiedAt: new Date(),
+    },
+  });
+
+  return user;
+}
+
+export async function updatePasswordWithResetToken(input: {
+  rawToken: string;
+  newPassword: string;
+}) {
+  const token = await consumeAuthToken(input.rawToken, AuthTokenPurpose.PASSWORD_RESET);
+  const passwordHash = hashPassword(input.newPassword);
+
+  const user = await prisma.user.update({
+    where: { id: token.userId },
+    data: {
+      passwordHash,
+      passwordUpdatedAt: new Date(),
+    },
+  });
+
+  await prisma.session.deleteMany({
+    where: { userId: user.id },
+  });
+
   return user;
 }

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { requirePermission, requireUser } from "@/lib/auth";
 import { redeemFreeCouponForPlan, validateCouponForPlan } from "@/lib/coupons";
+import { buildActionUrl, renderSimpleEmail, sendTransactionalEmail } from "@/lib/email";
 import { activateMembershipFromPayment, calculateDiscountedPrice, rejectPaymentRequest } from "@/lib/payments";
 import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
@@ -169,6 +170,30 @@ export async function redeemFreeCouponAction(formData: FormData) {
       });
     });
 
+    await sendTransactionalEmail({
+      userId: user.id,
+      toEmail: user.email,
+      template: "free-coupon-redeemed",
+      subject: "Your Creative Hub access is now active",
+      html: renderSimpleEmail({
+        heading: "Free access activated",
+        body:
+          plan.scope === "ALL_ACCESS"
+            ? "Your free coupon has unlocked all active tracks on Creative Hub."
+            : `Your free coupon has unlocked ${plan.nameAr} on Creative Hub.`,
+        ctaLabel: "Open billing",
+        ctaUrl: buildActionUrl("/dashboard/billing"),
+      }),
+      text:
+        plan.scope === "ALL_ACCESS"
+          ? "Your free coupon has unlocked all active Creative Hub tracks."
+          : `Your free coupon has unlocked ${plan.nameAr} on Creative Hub.`,
+      payload: {
+        planCode: plan.code,
+        couponCode,
+      },
+    }).catch(() => null);
+
     revalidatePaymentSurfaces();
     redirect("/dashboard/billing?success=free-redeemed");
   } catch (error) {
@@ -184,11 +209,35 @@ export async function approvePaymentAction(formData: FormData) {
     const paymentRequestId = requireFormString(formData, "paymentRequestId");
     const adminNote = String(formData.get("adminNote") || "").trim();
 
-    await activateMembershipFromPayment({
+    const result = await activateMembershipFromPayment({
       paymentRequestId,
       actorUserId: admin.id,
       adminNote: adminNote || null,
     });
+
+    await sendTransactionalEmail({
+      userId: result.paymentRequest.userId,
+      toEmail: result.paymentRequest.user.email,
+      template: "payment-approved",
+      subject: "Your payment was approved on Creative Hub",
+      html: renderSimpleEmail({
+        heading: "Payment approved",
+        body:
+          result.paymentRequest.plan.scope === "ALL_ACCESS"
+            ? "Your all-access membership is now active."
+            : `Your payment was approved and ${result.paymentRequest.plan.nameAr} is now unlocked.`,
+        ctaLabel: "Open dashboard",
+        ctaUrl: buildActionUrl("/dashboard"),
+      }),
+      text:
+        result.paymentRequest.plan.scope === "ALL_ACCESS"
+          ? "Your all-access membership is now active."
+          : `Your payment was approved and ${result.paymentRequest.plan.nameAr} is now unlocked.`,
+      payload: {
+        paymentRequestId: result.paymentRequest.id,
+        planCode: result.paymentRequest.plan.code,
+      },
+    }).catch(() => null);
 
     revalidatePaymentSurfaces();
     redirect("/admin/payments?success=approved");
@@ -205,11 +254,29 @@ export async function rejectPaymentAction(formData: FormData) {
     const paymentRequestId = requireFormString(formData, "paymentRequestId");
     const adminNote = String(formData.get("adminNote") || "").trim();
 
-    await rejectPaymentRequest({
+    const result = await rejectPaymentRequest({
       paymentRequestId,
       actorUserId: admin.id,
       adminNote: adminNote || null,
     });
+
+    await sendTransactionalEmail({
+      userId: result.userId,
+      toEmail: result.user.email,
+      template: "payment-rejected",
+      subject: "Your payment needs another submission",
+      html: renderSimpleEmail({
+        heading: "Payment rejected",
+        body: result.adminNote || "Your payment proof was rejected. Please review the note and submit a new receipt.",
+        ctaLabel: "Open billing",
+        ctaUrl: buildActionUrl("/dashboard/billing"),
+      }),
+      text: result.adminNote || "Your payment proof was rejected. Please review the note and submit a new receipt.",
+      payload: {
+        paymentRequestId: result.id,
+        planId: result.planId,
+      },
+    }).catch(() => null);
 
     revalidatePaymentSurfaces();
     redirect("/admin/payments?success=rejected");

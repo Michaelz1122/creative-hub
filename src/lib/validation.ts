@@ -245,6 +245,41 @@ export function parseCouponCodeField(formData: FormData, key: string, options?: 
   return raw;
 }
 
+export function parseEmailField(formData: FormData, key: string) {
+  const value = requireFormString(formData, key, { maxLength: 190 }).toLowerCase();
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+    throw new ValidationError(`invalid-${key}`, `${key} is not a valid email.`);
+  }
+
+  return value;
+}
+
+export function validatePasswordStrength(password: string) {
+  if (password.length < 10) {
+    throw new ValidationError("password-too-short", "Password must be at least 10 characters.");
+  }
+
+  if (!/[a-z]/.test(password)) {
+    throw new ValidationError("password-missing-lowercase", "Password must include a lowercase letter.");
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    throw new ValidationError("password-missing-uppercase", "Password must include an uppercase letter.");
+  }
+
+  if (!/\d/.test(password)) {
+    throw new ValidationError("password-missing-number", "Password must include a number.");
+  }
+
+  return password;
+}
+
+export function parsePasswordField(formData: FormData, key: string) {
+  const password = requireFormString(formData, key, { minLength: 10, maxLength: 200 });
+  return validatePasswordStrength(password);
+}
+
 export function parseEgyptPhoneField(formData: FormData, key: string) {
   const value = requireFormString(formData, key);
   if (!/^01[0-2,5]\d{8}$/.test(value)) {

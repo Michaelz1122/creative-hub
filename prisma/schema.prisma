@@ -66,6 +66,17 @@ enum NotificationType {
   ANNOUNCEMENT
 }
 
+enum AuthTokenPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum EmailDeliveryStatus {
+  LOGGED
+  SENT
+  FAILED
+}
+
 model User {
   id               String              @id @default(cuid())
   email            String              @unique
@@ -73,6 +84,7 @@ model User {
   image            String?
   passwordHash     String?
   passwordUpdatedAt DateTime?
+  emailVerifiedAt  DateTime?
   locale           String              @default("ar-EG")
   isSuspended      Boolean             @default(false)
   createdAt        DateTime            @default(now())
@@ -87,6 +99,8 @@ model User {
   notifications    Notification[]
   userRoles        UserRole[]
   sessions         Session[]
+  authTokens       AuthToken[]
+  emailDeliveries  EmailDeliveryLog[]
   adminNotes       AdminUserNote[]
   adminNotesAuthored AdminUserNote[]  @relation("AdminUserNotesAuthored")
 }
@@ -104,6 +118,19 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+}
+
+model AuthToken {
+  id          String           @id @default(cuid())
+  userId       String
+  purpose     AuthTokenPurpose
+  tokenHash   String           @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
 }
 
 model Role {
@@ -523,6 +550,24 @@ model Notification {
   isRead      Boolean           @default(false)
   createdAt   DateTime          @default(now())
   user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailDeliveryLog {
+  id              String              @id @default(cuid())
+  userId          String?
+  toEmail         String
+  template        String
+  subject         String
+  status          EmailDeliveryStatus
+  provider        String
+  providerMessageId String?
+  errorMessage    String?
+  payload         Json?
+  createdAt       DateTime            @default(now())
+  user            User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([template, createdAt])
 }
 
 model Announcement {

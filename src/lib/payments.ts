@@ -95,7 +95,10 @@ export async function activateMembershipFromPayment(input: {
         throw new ValidationError("approved-without-membership", "Approved payment has no membership.");
       }
 
-      return existingMembership;
+      return {
+        membership: existingMembership,
+        paymentRequest,
+      };
     }
 
     if (paymentRequest.status !== PaymentStatus.SUBMITTED) {
@@ -209,7 +212,13 @@ export async function activateMembershipFromPayment(input: {
       },
     });
 
-    return membership;
+    return {
+      membership,
+      paymentRequest: {
+        ...paymentRequest,
+        adminNote: input.adminNote ?? null,
+      },
+    };
   });
 }
 
@@ -231,7 +240,7 @@ export async function rejectPaymentRequest(input: {
     }
 
     if (paymentRequest.status === PaymentStatus.REJECTED) {
-      return;
+      return paymentRequest;
     }
 
     if (paymentRequest.status !== PaymentStatus.SUBMITTED) {
@@ -278,5 +287,10 @@ export async function rejectPaymentRequest(input: {
         summary: `Rejected payment for ${paymentRequest.user.email}`,
       },
     });
+
+    return {
+      ...paymentRequest,
+      adminNote: input.adminNote ?? null,
+    };
   });
 }

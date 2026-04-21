@@ -1,6 +1,36 @@
 import { prisma } from "@/lib/prisma";
 import { ValidationError } from "@/lib/validation";
 
+export async function assertRateLimitNotBlocked(input: {
+  scope: string;
+  key: string;
+}) {
+  const bucket = await prisma.rateLimitBucket.findUnique({
+    where: {
+      scope_key: {
+        scope: input.scope,
+        key: input.key,
+      },
+    },
+  });
+
+  if (bucket?.blockedUntil && bucket.blockedUntil > new Date()) {
+    throw new ValidationError(`${input.scope}-rate-limited`, `${input.scope} is temporarily rate limited.`);
+  }
+}
+
+export async function resetRateLimitBucket(input: {
+  scope: string;
+  key: string;
+}) {
+  await prisma.rateLimitBucket.deleteMany({
+    where: {
+      scope: input.scope,
+      key: input.key,
+    },
+  });
+}
+
 export async function enforceRateLimit(input: {
   scope: string;
   key: string;

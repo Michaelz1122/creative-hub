@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { getEntitlementSummary, hasTrackAccess, type MembershipWithPlan } from "@/lib/access";
 import { requirePermission, requireUser } from "@/lib/auth";
+import { buildActionUrl, renderSimpleEmail, sendTransactionalEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import {
   getActionErrorCode,
@@ -124,6 +125,9 @@ export async function adminRespondToFeedbackAction(formData: FormData) {
 
     const thread = await prisma.feedbackThread.findUnique({
       where: { id: threadId },
+      include: {
+        user: true,
+      },
     });
 
     if (!thread) {
@@ -171,6 +175,24 @@ export async function adminRespondToFeedbackAction(formData: FormData) {
         },
       });
     });
+
+    await sendTransactionalEmail({
+      userId: thread.userId,
+      toEmail: thread.user.email,
+      template: "feedback-updated",
+      subject: "Your Creative Hub feedback thread was updated",
+      html: renderSimpleEmail({
+        heading: "Feedback updated",
+        body: reply || `Your feedback status is now ${status}.`,
+        ctaLabel: "Open feedback",
+        ctaUrl: buildActionUrl("/dashboard/feedback"),
+      }),
+      text: reply || `Your feedback status is now ${status}.`,
+      payload: {
+        threadId: thread.id,
+        status,
+      },
+    }).catch(() => null);
 
     redirect("/admin/feedback?success=updated");
   } catch (error) {
